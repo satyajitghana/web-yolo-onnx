@@ -1,13 +1,20 @@
-import cv from "@techstark/opencv-js";
+import cv, { Exception } from "@techstark/opencv-js";
 import { InferenceSession, Tensor } from "onnxruntime-web";
 import { renderBoxes } from "./renderBox";
 
 const preprocessing = (
-  source: HTMLImageElement,
+  source: HTMLImageElement | cv.Mat,
   modelWidth: number,
   modelHeight: number
 ): [cv.Mat, number, number] => {
-  const mat = cv.imread(source); // read from img tag
+  let mat: cv.Mat = new cv.Mat();
+
+  if (source instanceof HTMLImageElement) {
+  mat = cv.imread(source); // read from img tag
+  } else if (source instanceof cv.Mat) {
+    mat = source
+  } 
+
   const matC3 = new cv.Mat(mat.rows, mat.cols, cv.CV_8UC3); // new image matrix
   cv.cvtColor(mat, matC3, cv.COLOR_RGBA2BGR); // RGBA to BGR
 
@@ -38,7 +45,7 @@ const preprocessing = (
 };
 
 const detectImage = async (
-  image: HTMLImageElement,
+  image: HTMLImageElement | cv.Mat,
   canvas: HTMLCanvasElement,
   session: {net: InferenceSession, nms: InferenceSession},
   topk: number,
@@ -47,6 +54,7 @@ const detectImage = async (
   inputShape: number[]
 ) => {
     const [modelWidth, modelHeight] = inputShape.slice(2);
+
   const [input, xRatio, yRatio] = preprocessing(image, modelWidth, modelHeight);
 
   const tensor = new Tensor("float32", input.data32F, inputShape); // to ort.Tensor

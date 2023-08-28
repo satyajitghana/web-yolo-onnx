@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import cv from "@techstark/opencv-js";
 import { Tensor, InferenceSession } from "onnxruntime-web";
 import { detectImage } from "@/lib/utils";
@@ -27,8 +27,10 @@ export default function Home() {
   const canvasOutputRef = useRef<HTMLCanvasElement>(null);
   const canvasInputRef = useRef<HTMLCanvasElement>(null);
 
+  const webcamRef = useRef<HTMLVideoElement>(null);
+  const outputRef = useRef<HTMLCanvasElement>(null);
+
   cv["onRuntimeInitialized"] = async () => {
-    // create the YOLOv8 Model
     const yolov8 = await InferenceSession.create(`/model/${modelConfig.name}`, {
       executionProviders: ["wasm"],
     });
@@ -41,30 +43,129 @@ export default function Home() {
       }
     );
 
-    const tensor = new Tensor(
-      "float32",
-      new Float32Array(modelConfig.inputShape.reduce((a, b) => a * b)),
-      modelConfig.inputShape
-    );
-    const res = await yolov8.run({ images: tensor });
-    console.log("model warm up", res);
+    const videoElem = webcamRef.current;
+    const outputElem = outputRef.current;
+    if (!videoElem || !outputElem) return;
 
-    setSession({
-      net: yolov8,
-      nms: nms,
-    });
+    navigator.mediaDevices
+      .getUserMedia({
+        video: true,
+      })
+      .then((stream) => {
+        if (videoElem) {
+          videoElem.srcObject = stream;
+          // videoElem.play();
+        }
+      });
 
-    setLoading(false);
+    let cap = new cv.VideoCapture(videoElem);
+
+    const processVideo = () => {
+      let src = new cv.Mat(videoElem.height, videoElem.width, cv.CV_8UC4);
+      let dst = new cv.Mat(videoElem.height, videoElem.width, cv.CV_8UC4);
+      cap.read(src);
+
+      src.copyTo(dst);
+
+      // cv.cvtColor(dst, dst, cv.COLOR_BGR2GRAY);
+
+      // cv.imshow(outputElem, dst);
+
+      detectImage(
+        dst,
+        outputElem,
+        {
+          net: yolov8,
+          nms: nms,
+        },
+        modelConfig.topK,
+        modelConfig.iouThreshold,
+        modelConfig.scoreThreshold,
+        modelConfig.inputShape
+      );
+
+      setTimeout(processVideo, 1000 / 30);
+    };
+
+    setTimeout(processVideo, 0);
   };
+
+  // cv["onRuntimeInitialized"] = async () => {
+  //   // create the YOLOv8 Model
+  //   const yolov8 = await InferenceSession.create(`/model/${modelConfig.name}`, {
+  //     executionProviders: ["wasm"],
+  //   });
+
+  //   // create the NMS Model
+  //   const nms = await InferenceSession.create(
+  //     `/model/${modelConfig.nmsModel}`,
+  //     {
+  //       executionProviders: ["wasm"],
+  //     }
+  //   );
+
+  //   const tensor = new Tensor(
+  //     "float32",
+  //     new Float32Array(modelConfig.inputShape.reduce((a, b) => a * b)),
+  //     modelConfig.inputShape
+  //   );
+  //   const res = await yolov8.run({ images: tensor });
+  //   console.log("model warm up", res);
+
+  //   setSession({
+  //     net: yolov8,
+  //     nms: nms,
+  //   });
+
+  //   setLoading(false);
+  // };
+
+  // useLayoutEffect(() => {
+  //   // console.log("hi");
+  //   // console.log("mediaDevices", navigator.mediaDevices);
+  //   // console.log("webcamRef", webcamRef.current);
+  //   navigator.mediaDevices
+  //     .getUserMedia({
+  //       video: true,
+  //     })
+  //     .then((stream) => {
+  //       if (webcamRef.current) {
+  //         console.log("stream", stream);
+  //         console.log("webcamRef", webcamRef.current);
+  //         webcamRef.current.srcObject = stream;
+  //         webcamRef.current.addEventListener("loadeddata", (e) => {
+  //           console.log("webcamframe", e);
+  //         });
+  //         webcamRef.current.play();
+  //       }
+  //     });
+  // }, []);
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
+    <main className="flex flex-col py-24">
       <h1 className="text-3xl">YOLOV8 - ONNX - WASM</h1>
       {loading && <>Loading Model...</>}
-      <img
+      <div className="relative">
+        <video
+          className="absolute top-0 left-0"
+          autoPlay
+          muted
+          width="640"
+          height="480"
+          ref={webcamRef}
+        />
+        <canvas
+          className="absolute top-0 left-0"
+          width="640"
+          height="480"
+          ref={outputRef}
+        />
+      </div>
+
+      {/* <img
         ref={inputImageRef}
         src="#"
         alt=""
-        // style={{ display: image ? "block" : "none" }}
         className="hidden absolute"
         onLoad={() => {
           if (!inputImageRef.current || !canvasOutputRef.current) return;
@@ -78,9 +179,9 @@ export default function Home() {
             modelConfig.scoreThreshold,
             modelConfig.inputShape
           );
-        }}
-      />
-      <div className="relative min-h-[640px] min-w-[640px]">
+        }} */}
+      {/* /> */}
+      {/* <div className="relative min-h-[640px] min-w-[640px]">
         <div className="absolute flex flex-col items-center w-full justify-center z-20">
           <canvas
             width={modelConfig.inputShape[2]}
@@ -130,7 +231,7 @@ export default function Home() {
             setImage(url);
           }
         }}
-      />
+      /> */}
     </main>
   );
 }
